@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/iceberg-core",
+  "crates/iceberg-cli",
 ]
 
 resolver = "2"
@@ -12,3 +13,5 @@ apache-avro = "0.21"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
+clap = {version = "4.6", features = ["derive"] }
+iceberg-core = { path = "crates/iceberg-core" }

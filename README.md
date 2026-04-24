@@ -1,5 +1,14 @@
 # Learning project: Apache Iceberg spec implementation
 
+## Running the CLI
+
+To test the functionality with real files, [iceberg-cli](crates/iceberg-cli) implements a very simple CLI to interact with Iceberg files.
+
+```
+cargo run -- --path <path to a table metadata file>
+```
+
+
 ## Testing with PyIceberg
 
 To test this implementation against a reference, you can generate Iceberg metadata using the provided Python script in `test-gen-python/`. This uses `uv` to run an ephemeral environment with `pyiceberg`.
