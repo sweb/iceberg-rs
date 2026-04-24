@@ -53,16 +53,24 @@ impl<'de> Deserialize<'de> for PrimitiveType {
                     "uuid" => Ok(PrimitiveType::Uuid),
                     "binary" => Ok(PrimitiveType::Binary),
                     s if s.starts_with("fixed[") && s.ends_with("]") => {
-                        let length = s[6..s.len() -1].parse::<u32>().map_err(|e| E::custom(format!("Were not able to properly parse fixed type: {}", e)))?;
+                        let length = s[6..s.len() - 1].parse::<u32>().map_err(|e| {
+                            E::custom(format!("Were not able to properly parse fixed type: {}", e))
+                        })?;
                         Ok(PrimitiveType::Fixed(length))
-                    },
+                    }
                     s if s.starts_with("decimal(") && s.ends_with(")") => {
-                        let precision_scale = s[8..s.len() -1].split_once(',');
-                        let (p_raw, s_raw) = precision_scale.ok_or_else(|| E::custom("Were not able to properly parse decimal type"))?;
-                        let precision = p_raw.trim().parse::<u32>().map_err(|e| E::custom(format!("Were not able to properly parse fixed type: {}", e)))?;
-                        let scale = s_raw.trim().parse::<u32>().map_err(|e| E::custom(format!("Were not able to properly parse fixed type: {}", e)))?;
-                        Ok(PrimitiveType::Decimal{precision, scale})
-                    },
+                        let precision_scale = s[8..s.len() - 1].split_once(',');
+                        let (p_raw, s_raw) = precision_scale.ok_or_else(|| {
+                            E::custom("Were not able to properly parse decimal type")
+                        })?;
+                        let precision = p_raw.trim().parse::<u32>().map_err(|e| {
+                            E::custom(format!("Were not able to properly parse fixed type: {}", e))
+                        })?;
+                        let scale = s_raw.trim().parse::<u32>().map_err(|e| {
+                            E::custom(format!("Were not able to properly parse fixed type: {}", e))
+                        })?;
+                        Ok(PrimitiveType::Decimal { precision, scale })
+                    }
                     _ => Err(E::custom(format!("unknown primitive type: {}", value))),
                 }
             }
@@ -75,23 +83,24 @@ impl<'de> Deserialize<'de> for PrimitiveType {
 impl fmt::Display for PrimitiveType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-                    PrimitiveType::Boolean => write!(f, "boolean"),
-                    PrimitiveType::Int => write!(f, "int"),
-                    PrimitiveType::Long => write!(f, "long"),
-                    PrimitiveType::Float => write!(f, "float"),
-                    PrimitiveType::Double => write!(f, "double"),
-                    PrimitiveType::Date => write!(f, "date"),
-                    PrimitiveType::Time => write!(f, "time"),
-                    PrimitiveType::Timestamp => write!(f, "timestamp"),
-                    PrimitiveType::Timestamptz => write!(f, "timestamptz"),
-                    PrimitiveType::String => write!(f, "string"),
-                    PrimitiveType::Uuid => write!(f, "uuid"),
-                    PrimitiveType::Binary => write!(f, "binary"),
-                    PrimitiveType::Decimal { precision, scale } => write!(f ,"decimal({},{})", precision, scale),
-                    PrimitiveType::Fixed(l) => write!(f, "fixed[{}]", l),
-                }
+            PrimitiveType::Boolean => write!(f, "boolean"),
+            PrimitiveType::Int => write!(f, "int"),
+            PrimitiveType::Long => write!(f, "long"),
+            PrimitiveType::Float => write!(f, "float"),
+            PrimitiveType::Double => write!(f, "double"),
+            PrimitiveType::Date => write!(f, "date"),
+            PrimitiveType::Time => write!(f, "time"),
+            PrimitiveType::Timestamp => write!(f, "timestamp"),
+            PrimitiveType::Timestamptz => write!(f, "timestamptz"),
+            PrimitiveType::String => write!(f, "string"),
+            PrimitiveType::Uuid => write!(f, "uuid"),
+            PrimitiveType::Binary => write!(f, "binary"),
+            PrimitiveType::Decimal { precision, scale } => {
+                write!(f, "decimal({},{})", precision, scale)
+            }
+            PrimitiveType::Fixed(l) => write!(f, "fixed[{}]", l),
+        }
     }
-
 }
 
 impl Serialize for PrimitiveType {
@@ -228,9 +237,10 @@ impl fmt::Display for Transform {
 
 impl Serialize for Transform {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer {
-            serializer.serialize_str(&self.to_string())
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -275,7 +285,6 @@ pub struct Snapshot {
     manifest_list: String,
     summary: SnapshotSummary,
     schema_id: Option<u32>,
-
 }
 
 #[derive(Serialize, Deserialize)]
@@ -385,9 +394,6 @@ mod tests {
         let metadata_raw = r#"
 {"location":"file:///my-path","table-uuid":"0782efde-af24-4555-a654-77313ae34f37","last-updated-ms":1776936286421,"last-column-id":2,"schemas":[{"type":"struct","fields":[{"id":1,"name":"id","type":"int","required":true},{"id":2,"name":"name","type":"string","required":false}],"schema-id":0,"identifier-field-ids":[]}],"current-schema-id":0,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"id_part"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{},"snapshots":[],"snapshot-log":[],"metadata-log":[],"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0,"refs":{},"statistics":[],"partition-statistics":[],"format-version":2,"last-sequence-number":0}
         "#;
-        let schema_raw = r#"{"type":"struct","fields":[{"id":1,"name":"id","type":"int","required":true},{"id":2,"name":"name","type":"string","required":false}],"schema-id":0,"identifier-field-ids":[]}"#;
-        // let og_schema = TableSchema {schema_id: 1, identifier_field_ids: None, fields: vec![StructType]}
-        let schema: TableSchema = serde_json::from_str(schema_raw).unwrap();
         let metadata: TableMetadata = serde_json::from_str(metadata_raw).unwrap();
 
         assert_eq!(metadata.table_uuid, "0782efde-af24-4555-a654-77313ae34f37")
