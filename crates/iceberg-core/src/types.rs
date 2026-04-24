@@ -39,6 +39,7 @@ impl<'de> Deserialize<'de> for PrimitiveType {
             where
                 E: de::Error,
             {
+                // TODO: Use FromStr instead for string parsing
                 match value {
                     "boolean" => Ok(PrimitiveType::Boolean),
                     "int" => Ok(PrimitiveType::Int),
@@ -53,22 +54,47 @@ impl<'de> Deserialize<'de> for PrimitiveType {
                     "uuid" => Ok(PrimitiveType::Uuid),
                     "binary" => Ok(PrimitiveType::Binary),
                     s if s.starts_with("fixed[") && s.ends_with("]") => {
-                        let length = s[6..s.len() - 1].parse::<u32>().map_err(|e| {
+                        let inner = s
+                            .strip_prefix("fixed[")
+                            .and_then(|s| s.strip_suffix("]"))
+                            .ok_or_else(|| E::custom("Not able to parse fixed"))?;
+                        let length = inner.parse::<u32>().map_err(|e| {
                             E::custom(format!("Were not able to properly parse fixed type: {}", e))
                         })?;
                         Ok(PrimitiveType::Fixed(length))
                     }
                     s if s.starts_with("decimal(") && s.ends_with(")") => {
-                        let precision_scale = s[8..s.len() - 1].split_once(',');
-                        let (p_raw, s_raw) = precision_scale.ok_or_else(|| {
-                            E::custom("Were not able to properly parse decimal type")
-                        })?;
+                        let (p_raw, s_raw) = s
+                            .strip_prefix("decimal(")
+                            .and_then(|s| s.strip_suffix(")"))
+                            .and_then(|s| s.split_once(','))
+                            .ok_or_else(|| {
+                                E::custom("Were not able to properly parse decimal type")
+                            })?;
                         let precision = p_raw.trim().parse::<u32>().map_err(|e| {
-                            E::custom(format!("Were not able to properly parse fixed type: {}", e))
+                            E::custom(format!(
+                                "Were not able to properly parse decimal type: {}",
+                                e
+                            ))
                         })?;
                         let scale = s_raw.trim().parse::<u32>().map_err(|e| {
-                            E::custom(format!("Were not able to properly parse fixed type: {}", e))
+                            E::custom(format!(
+                                "Were not able to properly parse decimal type: {}",
+                                e
+                            ))
                         })?;
+                        if precision > 38 {
+                            return Err(E::custom(format!(
+                                "Precision for decimal must be at most 38, found {}",
+                                precision
+                            )));
+                        }
+                        if scale > precision {
+                            return Err(E::custom(format!(
+                                "Scale for decimal must be less than or equal to precision, found {}>{}",
+                                scale, precision
+                            )));
+                        }
                         Ok(PrimitiveType::Decimal { precision, scale })
                     }
                     _ => Err(E::custom(format!("unknown primitive type: {}", value))),
@@ -278,7 +304,7 @@ pub struct SnapshotSummary {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Snapshot {
-    snapshot_id: u32,
+    snapshot_id: u64,
     parent_snapshot_id: Option<u32>,
     sequence_number: u64,
     timestamp_ms: u64,
