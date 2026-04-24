@@ -1,3 +1,4 @@
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use iceberg_core::types::TableMetadata;
 use std::fs::File;
@@ -13,20 +14,22 @@ struct Args {
     path: String,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     let path = Path::new(&args.path);
-    let file = File::open(path).unwrap();
+    let file = File::open(path).context("Opening the file failed!")?;
     let reader = BufReader::new(file);
-    let table_metadata: TableMetadata = serde_json::from_reader(reader).unwrap();
+    let table_metadata: TableMetadata =
+        serde_json::from_reader(reader).context("Parsing json failed!")?;
     let schemas = table_metadata.schemas;
     if schemas.len() != 1 {
-        panic!("More than one schema is not supported yet!");
+        bail!("More than one schema is not supported yet!");
     }
 
     let schema = &schemas[0];
     for f in schema.fields.iter() {
         println!("Field: {:?}", f);
     }
+    Ok(())
 }
