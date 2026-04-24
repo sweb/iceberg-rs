@@ -2,6 +2,8 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
+use thiserror::Error;
 
 #[derive(Debug, PartialEq)]
 pub enum PrimitiveType {
@@ -19,6 +21,78 @@ pub enum PrimitiveType {
     Uuid,
     Fixed(u32),
     Binary,
+}
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum PrimitiveTypeError {
+    #[error("Unknown primitive type: {0}")]
+    UnknownType(String),
+
+    #[error("Invalid fixed length: {0}")]
+    InvalidFixedLength(String),
+
+    #[error("Invalid decimal format: {0}")]
+    InvalidDecimalFormat(String),
+
+    #[error("Decimal precision {0} exceeds maximum of 38")]
+    DecimalPrecisionTooLarge(u32),
+
+    #[error("Decimal scale {scale} exceeds precision of {precision}")]
+    DecimalScaleExceedsPrecision { scale: u32, precision: u32 },
+}
+
+impl FromStr for PrimitiveType {
+    type Err = PrimitiveTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "boolean" => Ok(PrimitiveType::Boolean),
+            "int" => Ok(PrimitiveType::Int),
+            "long" => Ok(PrimitiveType::Long),
+            "float" => Ok(PrimitiveType::Float),
+            "double" => Ok(PrimitiveType::Double),
+            "date" => Ok(PrimitiveType::Date),
+            "time" => Ok(PrimitiveType::Time),
+            "timestamp" => Ok(PrimitiveType::Timestamp),
+            "timestamptz" => Ok(PrimitiveType::Timestamptz),
+            "string" => Ok(PrimitiveType::String),
+            "uuid" => Ok(PrimitiveType::Uuid),
+            "binary" => Ok(PrimitiveType::Binary),
+
+            s if s.starts_with("fixed[") && s.ends_with("]") => {
+                let inner = s
+                    .strip_prefix("fixed[")
+                    .and_then(|s| s.strip_suffix("]"))
+                    .ok_or_else(|| PrimitiveTypeError::InvalidFixedLength(s.to_string()))?;
+                let length = inner.parse::<u32>().map_err(|_| PrimitiveTypeError::InvalidFixedLength(inner.to_string()))?;
+                Ok(PrimitiveType::Fixed(length))
+            }
+
+            s if s.starts_with("decimal(") && s.ends_with(")") => {
+                let (p_raw, s_raw) = s
+                    .strip_prefix("decimal(")
+                    .and_then(|s| s.strip_suffix(")"))
+                    .and_then(|s| s.split_once(','))
+                    .ok_or_else(|| PrimitiveTypeError::InvalidDecimalFormat(s.to_string()))?;
+                let precision = p_raw
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| PrimitiveTypeError::InvalidDecimalFormat(p_raw.to_string()))?;
+                let scale = s_raw
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| PrimitiveTypeError::InvalidDecimalFormat(s_raw.to_string()))?;
+                if precision > 38 {
+                    return Err(PrimitiveTypeError::DecimalPrecisionTooLarge(precision));
+                }
+                if scale > precision {
+                    return Err(PrimitiveTypeError::DecimalScaleExceedsPrecision {scale, precision});
+                }
+                Ok(PrimitiveType::Decimal { precision, scale })
+            }
+            _ => Err(PrimitiveTypeError::UnknownType(s.to_string())),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for PrimitiveType {
@@ -39,66 +113,7 @@ impl<'de> Deserialize<'de> for PrimitiveType {
             where
                 E: de::Error,
             {
-                // TODO: Use FromStr instead for string parsing
-                match value {
-                    "boolean" => Ok(PrimitiveType::Boolean),
-                    "int" => Ok(PrimitiveType::Int),
-                    "long" => Ok(PrimitiveType::Long),
-                    "float" => Ok(PrimitiveType::Float),
-                    "double" => Ok(PrimitiveType::Double),
-                    "date" => Ok(PrimitiveType::Date),
-                    "time" => Ok(PrimitiveType::Time),
-                    "timestamp" => Ok(PrimitiveType::Timestamp),
-                    "timestamptz" => Ok(PrimitiveType::Timestamptz),
-                    "string" => Ok(PrimitiveType::String),
-                    "uuid" => Ok(PrimitiveType::Uuid),
-                    "binary" => Ok(PrimitiveType::Binary),
-                    s if s.starts_with("fixed[") && s.ends_with("]") => {
-                        let inner = s
-                            .strip_prefix("fixed[")
-                            .and_then(|s| s.strip_suffix("]"))
-                            .ok_or_else(|| E::custom("Not able to parse fixed"))?;
-                        let length = inner.parse::<u32>().map_err(|e| {
-                            E::custom(format!("Were not able to properly parse fixed type: {}", e))
-                        })?;
-                        Ok(PrimitiveType::Fixed(length))
-                    }
-                    s if s.starts_with("decimal(") && s.ends_with(")") => {
-                        let (p_raw, s_raw) = s
-                            .strip_prefix("decimal(")
-                            .and_then(|s| s.strip_suffix(")"))
-                            .and_then(|s| s.split_once(','))
-                            .ok_or_else(|| {
-                                E::custom("Were not able to properly parse decimal type")
-                            })?;
-                        let precision = p_raw.trim().parse::<u32>().map_err(|e| {
-                            E::custom(format!(
-                                "Were not able to properly parse decimal type: {}",
-                                e
-                            ))
-                        })?;
-                        let scale = s_raw.trim().parse::<u32>().map_err(|e| {
-                            E::custom(format!(
-                                "Were not able to properly parse decimal type: {}",
-                                e
-                            ))
-                        })?;
-                        if precision > 38 {
-                            return Err(E::custom(format!(
-                                "Precision for decimal must be at most 38, found {}",
-                                precision
-                            )));
-                        }
-                        if scale > precision {
-                            return Err(E::custom(format!(
-                                "Scale for decimal must be less than or equal to precision, found {}>{}",
-                                scale, precision
-                            )));
-                        }
-                        Ok(PrimitiveType::Decimal { precision, scale })
-                    }
-                    _ => Err(E::custom(format!("unknown primitive type: {}", value))),
-                }
+                value.parse::<PrimitiveType>().map_err(E::custom)
             }
         }
 
