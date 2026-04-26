@@ -218,6 +218,50 @@ pub enum Transform {
     Void,
 }
 
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum TransformError {
+    #[error("Unknown transform: {0}")]
+    UnknownTransform(String),
+    #[error("Invalid bucket width: {0}")]
+    InvalidBucketWidth(String),
+    #[error("Invalid truncate width: {0}")]
+    InvalidTruncateWidth(String),
+}
+
+impl FromStr for Transform {
+    type Err = TransformError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "identity" => Ok(Transform::Identity),
+            "year" => Ok(Transform::Year),
+            "month" => Ok(Transform::Month),
+            "day" => Ok(Transform::Day),
+            "hour" => Ok(Transform::Hour),
+            "void" => Ok(Transform::Void),
+            s if s.starts_with("bucket[") && s.ends_with("]") => {
+                let inner = s
+                    .strip_prefix("bucket[")
+                    .and_then(|s| s.strip_suffix("]"))
+                    .ok_or_else(|| TransformError::InvalidBucketWidth(s.to_string()))?;
+                let bucket_size = inner
+                    .parse::<u32>()
+                    .map_err(|_| TransformError::InvalidBucketWidth(s.to_string()))?;
+                Ok(Transform::Bucket(bucket_size))
+            }
+            s if s.starts_with("truncate[") && s.ends_with("]") => {
+                let inner = s
+                    .strip_prefix("truncate[")
+                    .and_then(|s| s.strip_suffix("]"))
+                    .ok_or_else(|| TransformError::InvalidTruncateWidth(s.to_string()))?;
+                let width = inner
+                    .parse::<u32>()
+                    .map_err(|_| TransformError::InvalidTruncateWidth(s.to_string()))?;
+                Ok(Transform::Truncate(width))
+            }
+            _ => Err(TransformError::UnknownTransform(s.to_string())),
+        }
+    }
+}
 // Implementation based on https://serde.rs/impl-deserialize.html
 struct TransformVisitor;
 
@@ -233,27 +277,7 @@ impl<'de> Visitor<'de> for TransformVisitor {
     where
         E: de::Error,
     {
-        match value {
-            "identity" => Ok(Transform::Identity),
-            "year" => Ok(Transform::Year),
-            "month" => Ok(Transform::Month),
-            "day" => Ok(Transform::Day),
-            "hour" => Ok(Transform::Hour),
-            "void" => Ok(Transform::Void),
-            s if s.starts_with("bucket[") && s.ends_with("]") => {
-                let bucket_size = value[7..s.len() - 1]
-                    .parse::<u32>()
-                    .map_err(|e| E::custom(format!("Invalid bucket width: {}", e)))?;
-                Ok(Transform::Bucket(bucket_size))
-            }
-            s if s.starts_with("truncate[") && s.ends_with("]") => {
-                let width = value[9..s.len() - 1]
-                    .parse::<u32>()
-                    .map_err(|e| E::custom(format!("Invalid truncate width: {}", e)))?;
-                Ok(Transform::Truncate(width))
-            }
-            _ => Err(E::custom(format!("unknown transform: {}", value))),
-        }
+        value.parse::<Transform>().map_err(E::custom)
     }
 }
 
