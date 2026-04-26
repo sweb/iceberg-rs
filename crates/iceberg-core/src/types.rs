@@ -64,7 +64,9 @@ impl FromStr for PrimitiveType {
                     .strip_prefix("fixed[")
                     .and_then(|s| s.strip_suffix("]"))
                     .ok_or_else(|| PrimitiveTypeError::InvalidFixedLength(s.to_string()))?;
-                let length = inner.parse::<u32>().map_err(|_| PrimitiveTypeError::InvalidFixedLength(inner.to_string()))?;
+                let length = inner
+                    .parse::<u32>()
+                    .map_err(|_| PrimitiveTypeError::InvalidFixedLength(inner.to_string()))?;
                 Ok(PrimitiveType::Fixed(length))
             }
 
@@ -86,7 +88,10 @@ impl FromStr for PrimitiveType {
                     return Err(PrimitiveTypeError::DecimalPrecisionTooLarge(precision));
                 }
                 if scale > precision {
-                    return Err(PrimitiveTypeError::DecimalScaleExceedsPrecision {scale, precision});
+                    return Err(PrimitiveTypeError::DecimalScaleExceedsPrecision {
+                        scale,
+                        precision,
+                    });
                 }
                 Ok(PrimitiveType::Decimal { precision, scale })
             }
