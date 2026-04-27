@@ -22,4 +22,13 @@ cd test-gen-python && uv run --with pyiceberg --with sqlalchemy python3 generate
 
 The metadata will be generated in `test-data/warehouse/default/sample_table/metadata/`.
 
+### Generate Sample Manifest List
+Run the following command to generate a V2 manifest list Avro file for testing (de)serialization:
+
+```bash
+uv run --with fastavro test-gen-python/generate_manifest_list.py
+```
+
+The file will be generated in `test-data/manifest-list.avro`.
+
 

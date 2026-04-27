@@ -427,9 +427,44 @@ pub struct TableMetadata {
     // partition-statistics
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ManifestListEntry {
+    pub manifest_path: String,
+    pub manifest_length: u64,
+    pub partition_spec_id: u32,
+    pub content: u32,
+    pub sequence_number: u64,
+    pub min_sequence_number: u64,
+    pub added_snapshot_id: u64,
+    pub added_files_count: u32,
+    pub existing_files_count: u32,
+    pub deleted_files_count: u32,
+    pub added_rows_count: u64,
+    pub existing_rows_count: u64,
+    pub deleted_rows_count: u64,
+    pub partitions: Option<Vec<FieldSummary>>,
+    #[serde(with = "apache_avro::serde_avro_bytes_opt")]
+    pub key_metadata: Option<Vec<u8>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FieldSummary {
+    pub contains_null: bool,
+    pub contains_nan: Option<bool>,
+    #[serde(with = "apache_avro::serde_avro_bytes_opt")]
+    pub lower_bound: Option<Vec<u8>>,
+    #[serde(with = "apache_avro::serde_avro_bytes_opt")]
+    pub upper_bound: Option<Vec<u8>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apache_avro::{Reader, from_value};
+    use std::fs::File;
+    use std::path::Path;
 
     #[test]
     fn use_primitive_type() {
@@ -467,5 +502,21 @@ mod tests {
         let metadata: TableMetadata = serde_json::from_str(metadata_raw).unwrap();
 
         assert_eq!(metadata.table_uuid, "0782efde-af24-4555-a654-77313ae34f37")
+    }
+
+    #[test]
+    fn test_load_manifest_list() {
+        let path = Path::new("../../test-data/manifest-list.avro");
+        let file = File::open(path).unwrap();
+        let reader = Reader::new(file).unwrap();
+
+        for (i, record) in reader.enumerate() {
+            let manifest_list_entry = from_value::<ManifestListEntry>(&record.unwrap()).unwrap();
+
+            assert_eq!(
+                manifest_list_entry.manifest_path,
+                format!("s3://bucket/path/to/manifest{}.avro", i + 1)
+            );
+        }
     }
 }
