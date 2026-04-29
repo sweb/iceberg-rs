@@ -5,6 +5,49 @@ use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 
+pub const MANIFEST_LIST_SCHEMA: &str = r#"{
+    "type": "record",
+    "name": "manifest_list",
+    "fields": [
+        {"name": "manifest_path", "type": "string", "field-id": 500},
+        {"name": "manifest_length", "type": "long", "field-id": 501},
+        {"name": "partition_spec_id", "type": "int", "field-id": 502},
+        {"name": "content", "type": "int", "field-id": 517},
+        {"name": "sequence_number", "type": "long", "field-id": 515},
+        {"name": "min_sequence_number", "type": "long", "field-id": 516},
+        {"name": "added_snapshot_id", "type": "long", "field-id": 503},
+        {"name": "added_files_count", "type": "int", "field-id": 504},
+        {"name": "existing_files_count", "type": "int", "field-id": 505},
+        {"name": "deleted_files_count", "type": "int", "field-id": 506},
+        {"name": "added_rows_count", "type": "long", "field-id": 507},
+        {"name": "existing_rows_count", "type": "long", "field-id": 508},
+        {"name": "deleted_rows_count", "type": "long", "field-id": 509},
+        {
+            "name": "partitions",
+            "type": [
+                "null",
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "record",
+                        "name": "field_summary",
+                        "fields": [
+                            {"name": "contains_null", "type": "boolean", "field-id": 511},
+                            {"name": "contains_nan", "type": ["null", "boolean"], "field-id": 518, "default": null},
+                            {"name": "lower_bound", "type": ["null", "bytes"], "field-id": 512, "default": null},
+                            {"name": "upper_bound", "type": ["null", "bytes"], "field-id": 513, "default": null}
+                        ]
+                    }
+                }
+            ],
+            "field-id": 510,
+            "default": null
+        },
+        {"name": "key_metadata", "type": ["null", "bytes"], "field-id": 519, "default": null}
+    ]
+}
+"#;
+
 #[derive(Debug, PartialEq)]
 pub enum PrimitiveType {
     Boolean,
@@ -427,28 +470,28 @@ pub struct TableMetadata {
     // partition-statistics
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct ManifestListEntry {
     pub manifest_path: String,
-    pub manifest_length: u64,
+    pub manifest_length: i64,
     pub partition_spec_id: u32,
     pub content: u32,
-    pub sequence_number: u64,
-    pub min_sequence_number: u64,
-    pub added_snapshot_id: u64,
+    pub sequence_number: i64,
+    pub min_sequence_number: i64,
+    pub added_snapshot_id: i64,
     pub added_files_count: u32,
     pub existing_files_count: u32,
     pub deleted_files_count: u32,
-    pub added_rows_count: u64,
-    pub existing_rows_count: u64,
-    pub deleted_rows_count: u64,
+    pub added_rows_count: i64,
+    pub existing_rows_count: i64,
+    pub deleted_rows_count: i64,
     pub partitions: Option<Vec<FieldSummary>>,
     #[serde(with = "apache_avro::serde_avro_bytes_opt")]
     pub key_metadata: Option<Vec<u8>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldSummary {
     pub contains_null: bool,
@@ -462,9 +505,10 @@ pub struct FieldSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use apache_avro::{Reader, from_value};
+    use apache_avro::{Reader, Schema, Writer, from_value};
     use std::fs::File;
     use std::path::Path;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn use_primitive_type() {
@@ -475,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn test_roundtrip() {
+    fn test_transform_roundtrip() {
         let variants = vec![
             (Transform::Identity, r#""identity""#),
             (Transform::Bucket(10), r#""bucket[10]""#),
@@ -517,6 +561,48 @@ mod tests {
                 manifest_list_entry.manifest_path,
                 format!("s3://bucket/path/to/manifest{}.avro", i + 1)
             );
+        }
+    }
+
+    #[test]
+    fn test_manifest_list_roundtrip() {
+        let partitions1 = FieldSummary {
+            contains_null: false,
+            contains_nan: Some(false),
+            lower_bound: Some(vec![0, 0]),
+            upper_bound: Some(vec![0, 0, 0]),
+        };
+        let entry1 = ManifestListEntry {
+            manifest_path: "/my/path/1".to_string(),
+            manifest_length: 1,
+            partition_spec_id: 0,
+            content: 1,
+            sequence_number: 1,
+            min_sequence_number: 3,
+            added_snapshot_id: 1,
+            added_files_count: 1,
+            existing_files_count: 1,
+            deleted_files_count: 0,
+            added_rows_count: 1,
+            existing_rows_count: 1,
+            deleted_rows_count: 0,
+            partitions: Some(vec![partitions1]),
+            key_metadata: None,
+        };
+        let file = NamedTempFile::new().unwrap();
+        let file2 = file.reopen().unwrap();
+        let schema = Schema::parse_str(MANIFEST_LIST_SCHEMA).unwrap();
+        println!("{}", schema.canonical_form());
+        let mut writer = Writer::new(&schema, file);
+        writer.append_ser(&entry1).unwrap();
+        writer.flush().unwrap();
+
+        let reader = Reader::new(file2).unwrap();
+
+        for record in reader {
+            let manifest_list_entry = from_value::<ManifestListEntry>(&record.unwrap()).unwrap();
+
+            assert_eq!(&manifest_list_entry, &entry1);
         }
     }
 }

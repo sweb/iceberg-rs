@@ -9,3 +9,6 @@ serde_json.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 apache-avro.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27"

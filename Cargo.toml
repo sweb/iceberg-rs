@@ -1,18 +1,15 @@
 [workspace]
-members = [
-  "crates/iceberg-core",
-  "crates/iceberg-cli",
-]
+members = ["crates/iceberg-core", "crates/iceberg-cli"]
 
 resolver = "2"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-apache-avro = "0.21"
+apache-avro = { version = "0.21", features = ["derive"] }
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
-clap = {version = "4.6", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 thiserror = "2.0"
 iceberg-core = { path = "crates/iceberg-core" }
