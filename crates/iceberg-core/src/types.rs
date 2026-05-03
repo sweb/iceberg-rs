@@ -502,6 +502,85 @@ pub struct FieldSummary {
     pub upper_bound: Option<Vec<u8>>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Literal {
+    Boolean(bool),
+    Int(i32),
+    Long(i64),
+    String(String),
+    Float(f32),
+    Double(f64),
+    Decimal(i128),
+    Date(i32),
+    Time(i64),
+    Timestamp(i64),
+    TimestampTz(i64),
+    Fixed(Vec<u8>),
+    Binary(Vec<u8>),
+    Uuid([u8; 16]),
+}
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ParseLiteralError {
+    #[error("Type not defined, expected format `type:value`, instead got: {0}")]
+    TypeNotDefined(String),
+    #[error("Could not parse value for int: {0}")]
+    IntNotParsable(String),
+    #[error("Could not parse value for long: {0}")]
+    LongNotParsable(String),
+    #[error("Could not parse value for float: {0}")]
+    FloatNotParsable(String),
+    #[error("Could not parse value for double: {0}")]
+    DoubleNotParsable(String),
+    #[error("Could not parse value for decimal (represented as i128): {0}")]
+    DecimalNotParsable(String),
+    #[error("Unknown type: {0}")]
+    UnknownType(String),
+}
+
+impl FromStr for Literal {
+    type Err = ParseLiteralError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (t, v) = s
+            .split_once(':')
+            .ok_or_else(|| ParseLiteralError::TypeNotDefined(s.to_string()))?;
+        match t {
+            "int" => {
+                let parsed = v
+                    .parse::<i32>()
+                    .map_err(|_| ParseLiteralError::IntNotParsable(v.to_string()))?;
+                Ok(Literal::Int(parsed))
+            }
+            "long" => {
+                let parsed = v
+                    .parse::<i64>()
+                    .map_err(|_| ParseLiteralError::LongNotParsable(v.to_string()))?;
+                Ok(Literal::Long(parsed))
+            }
+            "string" => Ok(Literal::String(v.to_string())),
+            "float" => {
+                let parsed = v
+                    .parse::<f32>()
+                    .map_err(|_| ParseLiteralError::FloatNotParsable(v.to_string()))?;
+                Ok(Literal::Float(parsed))
+            }
+            "double" => {
+                let parsed = v
+                    .parse::<f64>()
+                    .map_err(|_| ParseLiteralError::DoubleNotParsable(v.to_string()))?;
+                Ok(Literal::Double(parsed))
+            }
+            "decimal" => {
+                let parsed = v
+                    .parse::<i128>()
+                    .map_err(|_| ParseLiteralError::DecimalNotParsable(v.to_string()))?;
+                Ok(Literal::Decimal(parsed))
+            }
+            _ => Err(ParseLiteralError::UnknownType(t.to_string())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,14 +588,6 @@ mod tests {
     use std::fs::File;
     use std::path::Path;
     use tempfile::NamedTempFile;
-
-    #[test]
-    fn use_primitive_type() {
-        assert_eq!(
-            Type::Primitive(PrimitiveType::Boolean),
-            Type::Primitive(PrimitiveType::Boolean)
-        );
-    }
 
     #[test]
     fn test_transform_roundtrip() {
@@ -592,7 +663,6 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let file2 = file.reopen().unwrap();
         let schema = Schema::parse_str(MANIFEST_LIST_SCHEMA).unwrap();
-        println!("{}", schema.canonical_form());
         let mut writer = Writer::new(&schema, file);
         writer.append_ser(&entry1).unwrap();
         writer.flush().unwrap();
@@ -603,6 +673,25 @@ mod tests {
             let manifest_list_entry = from_value::<ManifestListEntry>(&record.unwrap()).unwrap();
 
             assert_eq!(&manifest_list_entry, &entry1);
+        }
+    }
+
+    #[test]
+    fn test_parse_literal_from_str() {
+        let test_set = vec![
+            ("int:32", Literal::Int(32)),
+            ("long:5000", Literal::Long(5000)),
+            ("float:23.4", Literal::Float(23.4)),
+            ("double:230.4", Literal::Double(230.4)),
+            ("decimal:50023", Literal::Decimal(50023)),
+            (
+                "string:hello,world",
+                Literal::String("hello,world".to_string()),
+            ),
+        ];
+        for (input, expected) in test_set {
+            let actual = input.parse::<Literal>().unwrap();
+            assert_eq!(actual, expected);
         }
     }
 }
